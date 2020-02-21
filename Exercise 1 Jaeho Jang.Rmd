@@ -1,0 +1,112 @@
+library(mosaic)
+library(tidyverse)
+
+##Data Visualization: flights at ABIA
+
+#plot of actual departure time vs. scheduled departure time
+abia=ABIA
+
+ggplot(data=ABIA)+
+    geom_point(mapping=aes(x=CRSDepTime,y=DepTime,color=UniqueCarrier))
+
+abia_from_austin <- ABIA %>%
+  filter(Origin == "AUS")
+
+abia_to_austin <- ABIA %>%
+  filter(Dest == "AUS")
+
+#flights departing from Austin every month
+abia_dep_flights = abia_from_austin %>%
+  group_by(Dest, Month)  %>%  # group the data points by month
+  summarize(NotCancelled.sum = sum(Cancelled == 0))  # calculate sum of non-cancelled flights
+
+ggplot(abia_dep_flights, aes(x=Month, y=NotCancelled.sum)) + 
+  geom_density(stat='identity', fill = "#BF5700") +
+  ylab("Number of Flights") +
+  xlab("Month") +
+  ggtitle("Flights Departing from AUS by Month") +
+  facet_wrap(~ Dest)
+
+#flights flying into Austin every month
+abia_in_flights = abia_to_austin %>%
+  group_by(Origin, Month)  %>%  # group the data points by month
+  summarize(NotCancelled.sum = sum(Cancelled == 0))  # calculate sum of non-cancelled flights
+
+ggplot(abia_in_flights, aes(x=Month, y=NotCancelled.sum)) + 
+  geom_density(stat='identity', fill = "#BF5700") +
+  ylab("Number of Flights") +
+  xlab("Month") +
+  ggtitle("Flights Departing from AUS by Month") +
+  facet_wrap(~ Origin)
+
+##Regression Practice
+
+#regression/coefficient for equation
+lm_creat=lm(creatclear~age,data=creatinine)
+coef(lm_creat)
+#rate=-0.6198*age+147.8129
+#changes at rate of 0.6198
+#for age 55: -0.6198(55)+147.8129 = 113.7239
+
+#residual
+resid_creat=resid(lm_creat)
+resid_creat %>% which.min
+age_data=data.frame(age=c(40,60))
+predict(lm_creat,age_data)
+#resid135=135-123.0203
+#resid112=112-110.6240
+
+#What creatinine clearance rate should we expect, on average, for 55 years old?
+#Answer: 113.7239
+
+#How does creatinine clearance rate change with age?
+#Answer: rate decreases by 0.6198 mL/minutes for every year increase
+
+#Whose creatinine clearance is higher for their age: 40/135 or 60/112
+#Answer:60 year old: has a healthier rate of 1.376
+
+
+##Green Building
+
+#check if stories of building predicts rent
+ggplot(data=greenbuildings)+
+  geom_point(aes(x=leasing_rate,y=Rent))
+
+lm(Rent ~ leasing_rate,data= greenbuildings)
+#yes! it does; rent goes up by 13 cents every leasing_rate
+
+#check green building vs. non-green building leasing_rate
+ggplot(greenbuildings) + 
+  geom_histogram(aes(x=leasing_rate, y=stat(density)), binwidth=10) + 
+  facet_grid(green_rating~.)
+
+#both buildings have higher rent with higher leasing rates
+
+#recommended to sign buildings with higher leasing rates
+  
+
+##Milk Question
+
+#N=(P-C)*Q
+# =(P-C)*f(P); P and Q are couple
+
+#f(P): change in quantity according to price
+#Q=(alpha)(beta)^P
+# y is Q (responsatory) and p is X (explanatory); make linear equation with log variables
+
+plot(sales ~ price,data=milk)
+plot(log(sales)~log(price),data=milk)
+lm_ped=lm(log(sales)~log(price),data=milk)
+coef(lm_ped)
+
+#log(Q)=4.7-1.62*log(P)
+#Q=e^4.7*P^-1.62
+
+#N=(P-C)*(e^4.7*P^-1.62)
+#N=(P-C)*(110*P^-1.62)
+
+#Graphing
+curve((x-1)*110*x^(-1.62),from = 1,to=9)
+curve((x-1)*110*x^(-1.62),from = 2.5,to=2.7)
+#optimal price
+#Answer=$2.61
