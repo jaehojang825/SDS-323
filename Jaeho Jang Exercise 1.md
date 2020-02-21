@@ -1,7 +1,7 @@
 library(mosaic)
 library(tidyverse)
 
-1) Data Visualization: flights at ABIA
+##Data Visualization: flights at ABIA
 
 #plot of actual departure time vs. scheduled departure time
 abia=ABIA
@@ -39,7 +39,7 @@ ggplot(abia_in_flights, aes(x=Month, y=NotCancelled.sum)) +
   ggtitle("Flights Departing from AUS by Month") +
   facet_wrap(~ Origin)
 
-2) Regression Practice
+##Regression Practice
 
 #regression/coefficient for equation
 lm_creat=lm(creatclear~age,data=creatinine)
@@ -65,25 +65,27 @@ predict(lm_creat,age_data)
 #Whose creatinine clearance is higher for their age: 40/135 or 60/112
 #Answer:60 year old: has a healthier rate of 1.376
 
-3) Green Building
 
-#check if leasing rate predicts rent
+##Green Building
+
+#check if stories of building predicts rent
 ggplot(data=greenbuildings)+
-  geom_point(aes(x=leasing_rate,y=rent))
+  geom_point(aes(x=leasing_rate,y=Rent))
 
 lm(Rent ~ leasing_rate,data= greenbuildings)
-#yes! it does
+#yes! it does; rent goes up by 13 cents every leasing_rate
 
-#check green building vs. non-green building leasing rate
-ggplot(greenbuildings)+
-  geom_histogram(aes(x=leasing_rate),y=stat(density),bandwith=2)+
+#check green building vs. non-green building leasing_rate
+ggplot(greenbuildings) + 
+  geom_histogram(aes(x=leasing_rate, y=stat(density)), binwidth=10) + 
   facet_grid(green_rating~.)
-#green buildings have higher leasing rate
 
-#Higher leasing rate in green buildings do generate more revenue!
+#both buildings have higher rent with higher leasing rates
+
+#recommended to sign buildings with higher leasing rates
   
 
-4) Milk Question
+##Milk Question
 
 #N=(P-C)*Q
 # =(P-C)*f(P); P and Q are couple
