@@ -1,0 +1,293 @@
+---
+title: "Exercise 3 Jaeho Jang"
+author: "Jaeho Jang"
+date: "4/22/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+library(tidyverse)
+library(mosaic)
+library(dplyr)
+library(ggplot2)
+library(foreach)
+library(FNN)
+library(LICORS)
+
+
+##Predictive Model Building
+#For this question, I tried to look for the model that could best predict rent price within different rental properties in the US. Moreover,
+#I quantified that average change in rental income per square foot associated with green certification.
+
+#Accordingly, I chose the linear and lasso model to compare the RMSE of two model and conclude which model was more efficient.
+
+#Spliting into training set and test set
+n=nrow(greenbuildings)
+n_train=round(0.8*n)
+n_trest=n-n_train
+
+#rmse function
+rmse=function(y,ypred){
+  sqrt(mean((y-ypred)^2,na.rm=TRUE))
+}
+
+#Linear model
+
+#conduct splits for 100 different times
+```{r rmse split 100 times for linear, include=FALSE}
+
+rmse_vals_lin=do(100)*{
+  #spliting to cases within 100 different times
+  train_cases=sample.int(n,n_train,replace=FALSE)
+  green_train=greenbuildings[train_cases,]
+  green_test=greenbuildings[-train_cases,]
+  #linear model with Rent
+  green_lin=lm(Rent~.,data=green_train,)
+  
+  yhat_test=predict(green_lin,green_test)
+  
+  c(rmse(green_test$Rent,yhat_test))
+}
+#RMSE
+rmse_lin=colMeans(rmse_vals_lin)
+```
+
+#prediction plot
+```{r linear prediction, include=FALSE}
+
+ggplot()+  
+  geom_point(data=green_test,aes(x=Rent,y=yhat_test))+
+  geom_line(data=green_test,aes(x=Rent,y=Rent))+
+  ggtitle("Actual vs. Predicted Linear Model")
+cat("Linear RMSE:",rmse_lin)
+```
+
+#Lasso Model
+```{r rmse split for 100 times for lasso model, include=FALSE}
+lasso_vals = do(num_splits)*{
+  temp_train = model.matrix.lm(Rent ~ . - 1, data = on_train, na.action=na.pass)
+  temp_test = model.matrix.lm(Rent ~ . - 1, data = on_test, na.action=na.pass)
+  x_train = temp_train[complete.cases(temp_train),]
+  y_train = on_train$Rent[complete.cases(temp_train)]
+  x_test = temp_test[complete.cases(temp_test),]
+  y_test = on_test$Rent[complete.cases(temp_test)]
+  
+  # lasso regression
+  cv_lasso = cv.glmnet(x_train, y_train, family="gaussian", alpha = 1)
+ 
+  lambda_lasso = cv_lasso$lambda.min
+
+  yhat_lasso = predict(cv_fit_l$glmnet.fit, s = lambda_lasso, newx = x_test)
+
+  c(rmse(y_pred_l, yhat_lasso))
+}
+rmse_lasso = min(lasso_vals)
+```
+
+#prediction model
+```{r prediction plot for lasso model, include=FALSE}
+
+ggplot()+
+  geom_point(data=data.frame(x=y_test,y=as.numeric(yhat_lasso)),aes(x=x,y=y))+
+  geom_line(data=data.frame(x=y_test,y=y_test),aes(x=x,y=y))+
+  ggtitle("Actual vs. Predicted Lasso Model")
+cat("Lasso Regression RMSE:",rmse_lasso)
+```
+
+###What Causes What?###
+
+#Q1.Why can't I just get data from a few different cities and run the regression of "Crime" on "Police" to understand how more cops in the streets affect crime?
+#A: In the podcast, it mentions of the correlation implies causation fallacy. According to the fallacy, even if there may be some correlation between variable of "Crime" and "Police," it does not mean that police and the reason to crimes. There could be plenty of other variable that could be having influence over the variable "Crime";that being said, other variables must be controlled to see ther real affect of variable "Police" on variable "Crime."
+
+#Q2.Howe were the researchers from UPenn able to isolate this affect? Breifly describe their apporach and discuss their result in the "Table 2" below, from the researchers' paper.
+#A: In the podcast, it is mentioned that isolation was acheived by measuring effect of police on crime when there was high number of police in area for reasons other than crime; for example, events. As seen in "Table 2", Washington D.C. was chosen to see whether if it was actually the number of police that attracted crime when there was a event non-related to crime was occuring, and when crime rate was measured, it had significantly dropped compared prior to isolation. Furthermore, metro ridership of tourist was also measured to check if number of police had affect on this as well. This regression in fact showed a inverse relationship and proved that high number of police do not cause crimes.
+
+#Q3.Why did they have to control for Metro ridership? What was that trying to capture?
+#A: As mentioned from last question, metro ridership was controlled to measure the actual affect of police number on crime rate, or if it was traffic volume of tourists (potential terrorists). It was shown that ridership was not affected.
+
+#Q4. Below I am showing you "Table 4" from the researchers' paper. Just focus on the first column of the table. Can you describe the model being estimated here? What is the conclusion?
+#A: The model seems to be a linear model with dependent vairable being 'Crime." There are 2 variables and also a constant to fit the data into linear model. The table seems to tell that number of police have particularly strong effect on crime in district 1 compared to other districts. The ridershipe variable, as told in Q2 and Q3, states that the tourist number also has some degree of effect on crime rate. In conculsion, it seems like that police number has a strong effect on crime rate in district 1, but in other districts, there are other variable that effect crime rate.
+
+
+###Clustering and PCA###
+#The goal of this analysis is to run both a PCA and clustering algorithm on the 11 chemical properties of wines to summarize the results, and figure out which method is better for distinguishing red wine from white wine using only unsupervised information on chemical properties.
+
+#First we must take the subset of data so that only chemical properties are included (centered and scaled)
+```{r scaling, include=FALSE}
+wine_prop=wine[,-(12:14)]
+wine_prop=scale(wine_prop,center=TRUE,scale=TRUE)
+```
+
+#PCA; gives a better understanding of data by compressing dataset into fewer variables
+```{r wine PCA, include=FALSE}
+
+winepca=prcomp(wine_prop,scale=TRUE)
+summary(winepca)
+```
+
+#With first 3 variable comprising over 60% percent of variation, we can look at these variables to identify how PCA performs identifying similar wines the three PCs are combined with quality to group by color and quality and see what their relationship is
+```{r merging, include=FALSE}
+wine_feature=winepca$x
+wine_merged=merge(wine,wine_feature[,1:3],by="row.names")
+```
+
+#plots grouped by color
+```{r PC plots, include=FALSE}
+ggplot(data=wine_merged)+
+  geom_point(aes(x=PC1,y=PC2,color=color))+
+  ggtitle("PC1 vs PC2")
+
+ggplot(data=wine_merged)+
+  geom_point(aes(x=PC1,y=PC3,color=color))+
+  ggtitle("PC1 vs PC3")
+
+ggplot(data=wine_merged)+
+  geom_point(aes(x=PC2,y=PC3,color=color))+
+  ggtitle("PC2 vs PC3")
+```
+
+#As shown in the plot, there is a definite cluster between red and white wine; It is especially easy to tell betwee PC1/PC2 and PC1/PC3
+
+#Accordingly, we can also compare plots and see if we can sort the high quality wines and low quality wines
+```{r Color plots, include=FALSE}
+ggplot(data=wine_merged)+
+  geom_point(aes(x=PC1,y=PC2,color=quality))+
+  ggtitle("PC1 vs PC2")
+
+ggplot(data=wine_merged)+
+  geom_point(aes(x=PC1,y=PC3,color=quality))+
+  ggtitle("PC1 vs PC3")
+
+ggplot(data=wine_merged)+
+  geom_point(aes(x=PC2,y=PC3,color=quality))+
+  ggtitle("PC2 vs PC3")
+```
+
+#However, when looking at the plots grouped by quality of wine, we can assume that there aren't specific clusters compared to when we grouped
+#it in colors of the wine, and thus, harder to differentiate
+```{r Quality plots, include=FALSE}
+ggplot(data=wine_merged)+
+  geom_point(aes(y=PC1,x=quality,group=quality))+
+  ggtitle("PC1 by Quality of Wine")
+
+ggplot(data=wine_merged)+
+  geom_point(aes(y=PC2,x=quality,group=quality))+
+  ggtitle("PC2 by Quality of Wine")
+
+ggplot(data=wine_merged)+
+  geom_point(aes(y=PC3,x=quality,group=quality))+
+  ggtitle("PC3 by Quality of Wine")
+```
+
+#these plots show the overall trend of quality over the PC
+
+#Clustering;I chose the K-means++, as this method reduces errors in clustering compared to the regualr K-means.
+
+#The plot of trial ks and SSEs can tell me how well k-meas fits the data as whole.
+#finding k
+```{r K vs SEE plot, include=FALSE}
+
+wine_chem=wine[,(1:11)]
+k_grid=seq(2,14,by=1)
+sse_grid=foreach(k=k_grid,.combine='c')%do%{
+  cluster_k=kmeans(wine_chem,k,nstart=50)
+  cluster_k$tot.withinss
+}
+plot(k_grid,sse_grid)
+```
+
+#Plot shows that our 'elbow' is at k=4; accordingly, 4 clusters were created t compare their average wine bottle
+
+#scale variables
+```{r scaling, include=FALSE}
+wine_charc=scale(wine[,-(12:13)],center=TRUE,scale=TRUE)
+```
+
+#create clusters
+```{r clustering, include=FALSE}
+cluster=kmeanspp(wine_charc,k=4,nstart=25)
+cluster1=cluster$center[1,]*attr(wine_charc,"scaled:center")+attr(wine_charc,"scaled:scale")
+cluster2=cluster$center[2,]*attr(wine_charc,"scaled:center")+attr(wine_charc,"scaled:scale")
+cluster3=cluster$center[2,]*attr(wine_charc,"scaled:center")+attr(wine_charc,"scaled:scale")
+cluster4=cluster$center[2,]*attr(wine_charc,"scaled:center")+attr(wine_charc,"scaled:scale")
+clusters=c(cluster1,cluster2,cluster3,cluster4)
+cluster
+```
+
+#Then, I created plots for each cluster to check if the clusters could distinguish red wines from white wines
+```{r clustering plot, include=FALSE}
+ggplot(data=wine[which(cluster$cluster==1),names(wine)])+
+  geom_point(aes(x=citric.acid,y=density,color=color))+
+  ggtitle("Cluster 1 with Citric Acid")
+ggplot(data=wine[which(cluster$cluster==2),names(wine)])+
+  geom_point(aes(x=citric.acid,y=density,color=color))+
+  ggtitle("Cluster 2 with Citric Acid")
+ggplot(data=wine[which(cluster$cluster==3),names(wine)])+
+  geom_point(aes(x=citric.acid,y=density,color=color))+
+  ggtitle("Cluster 3 with Citric Acid")
+ggplot(data=wine[which(cluster$cluster==4),names(wine)])+
+  geom_point(aes(x=citric.acid,y=density,color=color))+
+  ggtitle("Cluster 4 with Citric Acid")
+```
+#We can tell that each cluster is mainly dominated by a specific color of wine; this shows that the clusters are
+#realistic and well defined.
+
+#conclusion
+#color wise clustering but for quality PCA
+
+
+###Market Segmentation###
+
+#Do investigate any market segments, it seems probable to approach the dataset with PCA, since it reduces ambiguity and 
+#makes the data more interpretable. It would allow us to see the relationship between the more relevant variable within
+#the dataset and leave the less relevant variables out. In conclusion, PCA would help us discover the most relevent and potential clusters
+#within the dataset.
+
+#centering and scaling the data; last two columns are considered null since all values are 0
+#To easily compare each variable in the dataset, variable values were altered to
+```{r scaling, include=FALSE}
+social_cat=social_marketing[,-1]
+social_cat=scale(social_cat,center=TRUE,scale=TRUE)
+```
+
+```{r social media PCA, include=FALSE}
+socialpca=prcomp(social_cat,scale=TRUE)
+summary(socialpca)
+```
+
+#To observe the most potential segements, it is probable to take the first 4 segments (nearly up to 35% of data) and observe their coefficients 
+#to see the trend within these potential segments
+```{r segmenting coefficients, include=FALSE}
+first4PC=round(socialpca$rotation[,1:4],1)
+first4PC
+```
+#In conclusion, looking at the list of coefficients for the 4 different clusters, we can tell that they each have a distinct trend.
+#Other than cluster 1, rest of them seem to have a positive coefficient categories, meaning that these positive coefficient categories
+#could be potential marketing opportunity for the client. For example, categories such as photo sharing, personal fitness, and online gaming
+#maintained a overall positive coefficients over different clusters. If these categories were to share a age group/cultural group, and the
+#client had the ability to figure it out, that would drastically expand twitter's network affect.
+
+#merging PC
+```{r merging, include=FALSE}
+social_charac=social_marketing[,-1]
+social_charac=merge(social_charac,socialpca$x[,1:4],by="row.names")
+```
+
+#measuring category performance in the data set
+#photo sharing
+```{performance plot, include=FALSE}
+
+lm_photo=lm(photo_sharing~PC1+PC2+PC3+PC4,data=social_charac)
+ggplot(data=social_charac)+
+  geom_point(aes(x=photo_sharing,y=fitted(lm_photo),group=photo_sharing))+
+  ggtitle("Phto Sharing Potential Performance")
+
+#personal_fitness
+lm_fitness=lm(personal_fitness~PC1+PC2+PC3+PC4,data=social_charac)
+ggplot(data=social_charac)+
+  geom_point(aes(x=personal_fitness,y=fitted(lm_fitness),group=personal_fitness))+
+  ggtitle("Personal Fitness Potential Performance")
+```
