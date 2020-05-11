@@ -1,0 +1,346 @@
+---
+title: "Final Project Report"
+author: "Rylan Keniston, Jaeho Jang"
+date: "5/2/2020"
+output:
+  word_document: default
+  pdf_document: default
+editor_options:
+  chunk_output_type: inline
+---
+Overview
+The data being analyzed describes musical characteristics of songs streamed in 2017, containing 13 attributes ranging from acoutisness, tempo, and danceability, as well as a target variable which describes whether a specific Spotify user liked the song or not. With this data set, we wanted to see if we could use these song attributes to predict whether a song is liked by the Spotify user or not.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, cache = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(mosaic)
+library(FNN)
+library(ggplot2)
+library(ggiraphExtra)
+library(foreach)
+library(LICORS)
+library(glmnet)
+```
+
+Method
+First, we conducted two different regression models to see which regression would predict the target variable most accurately. Looking at the confusion matrix of the linear model, we were able to conclude the average percent over 200 instances. The data set was split into two sets; a training set that contains a sample of 80% of song observations and a testing set that contains the other 20%.
+## Linear Regression
+``` {r}
+songs = read.csv("https://github.com/rylankeniston/SDS323_Spring2020/raw/master/Project/spotify.csv")
+
+rmse=function(y,ypred){
+  sqrt(mean((y-ypred)^2,na.rm=TRUE))
+}
+
+n=nrow(songs)
+n_train=round(0.8*n)
+n_test=n-n_train
+
+##linear
+error_lin_val = c()
+error_lin_val=do(200)*{
+  train_cases=sample.int(n,n_train,replace=FALSE)
+  test_cases=setdiff(1:n,train_cases)
+  song_train=songs[train_cases,2:15]
+  song_test=songs[test_cases,2:15]
+  
+  lm_song=lm(target~acousticness+danceability+duration_ms+energy+instrumentalness+key+liveness+loudness+mode+speechiness+tempo+time_signature+valence,data=song_train)
+  #yhat_test=predict(lm_song,song_test)
+  
+  #binary output
+  predict_songs=predict(lm_song,song_test)
+  good_song=ifelse(predict_songs > 0.5, "Like", "Dislike")
+  binary_news=ifelse(song_test$target == 1, "Like", "Dislike")
+  
+  confusion_table = table(Actual = binary_news, Predicted = good_song)
+}
+lin_conf_table = round(colMeans(error_lin_val))
+lin_conf_matrix = matrix(lin_conf_table, nrow = 2, ncol = 2)
+colnames(lin_conf_matrix) = c("Predicted Dislike", "Predicted Like")
+rownames(lin_conf_matrix) = c("Actual Dislike", "Actual Like")
+lin_conf_matrix
+LL = lin_conf_matrix[4]
+LD = lin_conf_matrix[3]
+DD = lin_conf_matrix[1]
+DL = lin_conf_matrix[2]
+percent_error = round(((LD + DL) / (LL + LD + DL + DD)), 4)
+
+cat("When predicting whether a song is liked or disliked, our linear regression model has a percent error of", percent_error*100,"%.")
+```
+
+Moreover, we also looked at a stepwise linear model and also derived is percent error thorugh a confusion matrix, as we believed a step-wise selection would give us a more accruate prediction of song preference.
+## Step-wise
+```{r}
+lm_step=step(lm_song,
+             scope=~(.+acousticness+danceability+duration_ms+energy+instrumentalness+key+liveness+loudness+mode+speechiness+tempo+time_signature+valence)^2)
+
+r_val=summary(lm_step)$r.squared
+error_Step_val = c()
+error_step_val=do(200)*{
+  train_cases=sample.int(n,n_train,replace=FALSE)
+  test_cases=setdiff(1:n,train_cases)
+  song_train=songs[train_cases,2:15]
+  song_test=songs[-test_cases,2:15]
+  
+  lm_step=update(lm_step,data=song_train)
+  
+  yhat_test2=predict(lm_step,song_test)
+  
+  predict_songs=predict(lm_song,song_test)
+  good_song=ifelse(predict_songs > 0.5, "Like", "Dislike")
+  binary_news=ifelse(song_test$target == 1, "Like", "Dislike")
+  
+  confusion_table = table(Actual = binary_news, Predicted = good_song)
+  
+  c(confusion_table)
+}
+step_conf_table = round(colMeans(error_step_val))
+step_conf_matrix = matrix(step_conf_table, nrow = 2, ncol = 2)
+colnames(step_conf_matrix) = c("Predicted Dislike", "Predicted Like")
+rownames(step_conf_matrix) = c("Actual Dislike", "Actual Like")
+step_conf_matrix
+LL = step_conf_matrix[4]
+LD = step_conf_matrix[3]
+DD = step_conf_matrix[1]
+DL = step_conf_matrix[2]
+step_percent_error = round(((LD + DL) / (LL + LD + DL + DD)), 4)
+
+
+cat("When predicting whether a song is liked or disliked, our step-wise regression model has a percent error of", step_percent_error*100,"%.")
+```
+After running the confusion matrix -as expected - when comparing the two different regression models, the step-wise model seemed to be slightly more accurate with a percent error of 33.09%.
+
+
+## KNN
+
+Next, we used KNN to develop a regression model that predicts whether a song was liked or disliked. To find the number of K nearest neighbors to use, we found the lowest average percent error when the values 2 through 100 were tested 100 times
+``` {r}
+### KNN
+
+spotify = read.csv("https://github.com/rylankeniston/SDS323_Spring2020/raw/master/Project/spotify.csv")
+
+# Finding best K value
+# Doing 50 tests for each K value from 2 to 100
+songs = spotify[,c(2:15)]
+head(songs)
+n = nrow(songs)
+n_train = round(0.8*n)
+n_test = n - n_train
+
+rmse = function(actual, predicted) {
+  sqrt(mean(data.matrix(actual - predicted)^2))
+}
+
+knn_values = c(2:100)
+avg_error = c()
+for (k_val in knn_values) {
+  k_errors = do (100)*{
+    train_cases = sample.int(n, n_train, replace = FALSE)
+    test_cases = setdiff(1:n, train_cases)
+    train_songs = songs[train_cases,]
+    test_songs = songs[test_cases,]
+    xtrain = model.matrix(~ . - (target) -1, data = train_songs)
+    xtest = model.matrix(~ . - (target) -1, data = test_songs)
+    ytrain = train_songs$target
+    ytest = test_songs$target
+    scale_amount = apply(xtrain, 2, sd)
+    Xtrain = scale(xtrain, scale=scale_amount)
+    Xtest = scale(xtrain, scale=scale_amount)
+    
+    knn_model = knn.reg(xtrain, xtest, ytrain, k=k_val)
+    
+    actuallikes = ifelse(ytest == 1, "Like", "Dislike")
+    predictedlikes = ifelse(knn_model$pred > 0.5, "Like", "Dislike")
+    knn_confusion_table = table(Actual = actuallikes, Predicted = predictedlikes)
+    LL = knn_confusion_table[4]
+    LD = knn_confusion_table[3]
+    DD = knn_confusion_table[1]
+    DL = knn_confusion_table[2]
+    percent_error = (LD + DL) / (LL + LD + DL + DD)
+    c(percent_error)
+  }
+  avg = colMeans(k_errors)
+  avg_error = append(avg_error, avg, after = length(avg_error))
+}
+min = round(min(avg_error), 4)
+K = which.min(avg_error) + 1
+cat(" The K value of", K, "has an average percent error of", min*100,"%")
+
+ggplot() +
+  geom_point(aes(x = knn_values, y = avg_error), color = "navy", size = 1) +
+  labs(title = "Percent Error for Tested K values", x = "K value", y = "Percent error") + theme(panel.background = element_rect(fill = "lightblue"), panel.grid.major = element_line(size =0.25), panel.grid.minor = element_line(size = 0.25))
+```
+
+We used this K value in our KNN model, running the test 200 times to find the true rate at which the model predicts whether a song was liked or not.
+
+```{r}
+# Running KNN model using our ideal value of K (200 times?)
+conf_table = c()
+conf_table = do (200)*{
+    train_cases = sample.int(n, n_train, replace = FALSE)
+    test_cases = setdiff(1:n, train_cases)
+    train_songs = songs[train_cases,]
+    test_songs = songs[test_cases,]
+    xtrain = model.matrix(~ . - (target) -1, data = train_songs)
+    xtest = model.matrix(~ . - (target) -1, data = test_songs)
+    ytrain = train_songs$target
+    ytest = test_songs$target
+    scale_amount = apply(xtrain, 2, sd)
+    Xtrain = scale(xtrain, scale=scale_amount)
+    Xtest = scale(xtrain, scale=scale_amount)
+    
+    knn_model = knn.reg(xtrain, xtest, ytrain, k=K)
+    
+    actuallikes = ifelse(ytest == 1, "Like", "Dislike")
+    predictedlikes = ifelse(knn_model$pred > 0.5, "Like", "Dislike")
+
+    knn_confusion_table2 = table(Actual = actuallikes, Predicted = predictedlikes)
+    c(knn_confusion_table2)
+}
+conf_table2 = round(colMeans(conf_table))
+conf_matrix = matrix(conf_table2, nrow = 2, ncol = 2)
+colnames(conf_matrix) = c("Predicted Dislike", "Predicted Like")
+rownames(conf_matrix) = c("Actual Dislike", "Actual Like")
+conf_matrix
+LL = conf_matrix[4]
+LD = conf_matrix[3]
+DD = conf_matrix[1]
+DL = conf_matrix[2]
+percent_errorK = round(((LD + DL) / (LL + LD + DL + DD)), 4)
+
+cat("Our regression model has an average percent error in classifying whether a song was liked or disliked for 200 tests using", K, "nearest neighbors is", percent_errorK*100,"%")
+```
+
+Our KNN model only correctly predicted about 60% of the songs correctly, so this model is considered pretty insufficient.
+
+## PCA
+Next, instead of using a regression or clustering to sort the liked and dislikedsongs in our data, we have created a principal component analysis (PCA) to reduce the number of variables used when describing the data and distinguishing the observations. From the 13 audio variables, the PCA algorithm created 13 new summary variables variables, named PC1 to PC13.
+
+```{r}
+spotify = read.csv("https://github.com/rylankeniston/SDS323_Spring2020/raw/master/Project/spotify.csv")
+songs2 = spotify[,(2:14)]
+head(songs2)
+X = scale(songs2, center=TRUE, scale=TRUE)
+
+PCAsongs = prcomp(X, scale=TRUE)
+summary(PCAsongs)
+```
+
+Each summary variable is a linear combination that maximizes the amount of variability retained from the original data. Combined, the first five of our summary variables explain about 60% of the variation in our data. The linear combinations of these components are:
+
+```{r}
+round(PCAsongs$rotation[,1:5],4)
+```
+
+To understand how well PCA performs at identifying similar songs, we looked at plots of our top three summary variables.
+
+```{r}
+spotify = read.csv("https://github.com/rylankeniston/SDS323_Spring2020/raw/master/Project/spotify.csv")
+
+spotify[["target"]] <- ifelse(spotify$target == 1, "Like", "Dislike")
+head(spotify)
+likes = PCAsongs$x
+new_data = merge(spotify, likes, by = "row.names")
+head(new_data)
+
+library(gridExtra)
+
+plot1 = ggplot(data = new_data) +
+  geom_point(aes(x = PC1, y = PC2, color = target), size=0.2) +
+  labs(color = "Target", title = "PC1 v PV2") +
+  scale_color_manual(values = c("red1", "gray10"))
+plot2 = ggplot(data = new_data) +
+  geom_point(aes(x = PC1, y = PC3, color = target), size=0.2) +
+  labs(color = "Target", title = "PC1 v PV3") +
+  scale_color_manual(values = c("red1", "gray10"))
+plot3 = ggplot(data = new_data) +
+  geom_point(aes(x = PC2, y = PC3, color = target), size=0.2) +
+  labs(color = "Target", title = "PC2 v PV3") +
+  scale_color_manual(values = c("red1", "gray10"))
+
+grid.arrange(plot1, plot2, plot3, ncol = 2)
+```
+
+In all three of the plots, it is hard to determine exactly how well our principal components analysis was able to distinguish the liked from the disliked songs. From looking at the first two plots, we can see that the disliked songs tend to have mor variation in the PC1 component. We can also see from the plots that liked songs are centrally given values inbetween 0 and -2 for PC2. For the PC3 component, liked songs tend to have more variation in the negative direction than disliked songs. Although none of the plots show substantial clustering, the PC1 v PC3 plot seems to distinguish the songs the best.
+
+## Clustering
+Lastly, we used clustering to determine if it was able to actually differentiate between 'liked' songs and 'not liked' songs with given attributes. We chose to use the K-means++ method, as the method uses bias of distance when choosing the starting centroid points, therefore, reduces final cluster errors. To find out how many k numbers of cluster will best fit the data, we looked at plot of trial k's and their associated SSE's.
+
+```{r}
+songs = read.csv("https://github.com/rylankeniston/SDS323_Spring2020/raw/master/Project/spotify.csv")
+songlikes <- ifelse(songs$target == 1, "Like", "Dislike")
+songs$target <- songlikes
+head(songs)
+
+song_charac=songs[,(2:14)]
+k_grid=seq(3,15,by=1)
+sse_grid=foreach(k=k_grid,.combine='c')%do%{
+  cluster_k=kmeans(song_charac,k,nstart=50)
+  cluster_k$tot.withinss
+}
+plot(k_grid,sse_grid,xlab='k_values',y_lab='SSE',main='Measure of fit for k values')
+```
+The plot showed that our 'elbow' point was located at around k =6, and therefore, we chose to create 6 clusters. After running the song data through the K-means++ model using 6 clusters, each cluster's average attribute value was found.
+```{r}
+#scale variables
+song_target=scale(songs[,(2:14)],center=TRUE,scale=TRUE)
+
+#clusters;elbow point at k=6
+mu=attr(song_target,'scaled:center')
+sigma=attr(song_target,'scaled:scale')
+
+cluster=kmeanspp(song_target,k=6,nstart=25)
+c1=cluster$center[1,]*sigma+mu
+c2=cluster$center[2,]*sigma+mu
+c3=cluster$center[3,]*sigma+mu
+c4=cluster$center[4,]*sigma+mu
+c5=cluster$center[5,]*sigma+mu
+c6=cluster$center[6,]*sigma+mu
+clusters=c(c1,c2,c3,c4,c5,c6)
+dim(clusters) <- c(6, 13)
+rownames(clusters) <- (1:6)
+colnames(clusters) <- c("acousticness", "danceability", "duration_ms", "energy", "instrumentalness", "key", "liveness", "loudness", "mode", "speechiness", "tempo", "time_signature", "valence")
+round(clusters, 2)
+```
+
+To see if clustering the data could actually distinguish 'liked' songs and 'disliked' songs, single clustered were generated with colors that determined the likeness.
+```{r}
+#check if these clusters actually distinguish good songs and bad songs;looked at characteristics (valence,tempo)
+group=cluster$cluster
+target1<-songs[which(group==1),names(songs)]
+target2<-songs[which(group==2),names(songs)]
+target3<-songs[which(group==3),names(songs)]
+target4<-songs[which(group==4),names(songs)]
+target5<-songs[which(group==5),names(songs)]
+target6<-songs[which(group==6),names(songs)]
+
+z1 = ggplot(data = target1) +
+  geom_point(aes(x = acousticness, y = danceability, color = target), size=0.75) +
+  labs(title = "Cluster 1", color = "Target", xlab = "Acousticness", ylab = "Danceability") +
+  scale_color_manual(values = c("red1", "gray10"))
+z2 = ggplot(data = target2) +
+  geom_point(aes(x = acousticness, y = danceability, color = target), size=0.75) +
+  labs(title = "Cluster 2", color = "Target", xlab = "Acousticness", ylab = "Danceability") +
+  scale_color_manual(values = c("red1", "gray10"))
+z3 = ggplot(data = target3) +
+  geom_point(aes(x = acousticness, y = danceability, color = target), size=0.75) +
+  labs(title = "Cluster 3", color = "Target", xlab = "Acousticness", ylab = "Danceability") +
+  scale_color_manual(values = c("red1", "gray10"))
+z4 = ggplot(data = target4) +
+  geom_point(aes(x = acousticness, y = danceability, color = target), size=0.75) +
+  labs(title = "Cluster 4", color = "Target", xlab = "Acousticness", ylab = "Danceability") +
+  scale_color_manual(values = c("red1", "gray10"))
+z5 = ggplot(data = target5) +
+  geom_point(aes(x = acousticness, y = danceability, color = target), size=0.75) +
+  labs(title = "Cluster 5", color = "Target", xlab = "Acousticness", ylab = "Danceability") +
+  scale_color_manual(values = c("red1", "gray10"))
+z6 = ggplot(data = target6) +
+  geom_point(aes(x = acousticness, y = danceability, color = target), size=0.75) +
+  labs(title = "Cluster 6", color = "Target", xlab = "Acousticness", ylab = "Danceability") +
+  scale_color_manual(values = c("red1", "gray10"))
+z6
+grid.arrange(z1, z2, z3, z4, z5, z6)
+```
+As seen from the plots, all the plots seemed to have a pretty dominant saturation out of the two 'target' choices. This tells us that our K-means++ performs well when predicting if song was liked or not.
+
